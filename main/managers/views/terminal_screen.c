@@ -5,10 +5,13 @@
 #include "freertos/event_groups.h"
 #include <stdlib.h>
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <string.h>
 
 lv_obj_t *terminal_textarea = NULL;
 uint32_t last_update = 0;
+int closeCount = 0;
+unsigned long lastPress = 0;
 #define MAX_TEXT_LENGTH 4096
 
 int custom_log_vprintf(const char *fmt, va_list args);
@@ -40,6 +43,9 @@ void terminal_view_create(void) {
 
     
     display_manager_add_status_bar("Terminal");
+
+    lastPress = (unsigned long) (esp_timer_get_time() / 1000ULL);
+    closeCount = 0;
 }
 
 void terminal_view_destroy(void) {
@@ -57,24 +63,47 @@ void terminal_view_add_text(const char *text) {
     if (text == NULL) return;
     
     lv_textarea_add_text(terminal_textarea, text);
-    lv_textarea_add_text(terminal_textarea, "\n");
+    bool isPacket = strlen(text) == 1 && text[0] == '.';
+
+    if (isPacket && strlen(lv_textarea_get_text(terminal_textarea)) > 500)
+    {
+        lv_textarea_set_text(terminal_textarea, "");
+    }
+
+    if (!isPacket)
+    {
+        lv_textarea_add_text(terminal_textarea, "\n");
+    }
     
     lv_textarea_set_cursor_pos(terminal_textarea, LV_TEXTAREA_CURSOR_LAST);
 }
 
 void terminal_view_hardwareinput_callback(InputEvent *event) {
     if (event->type == INPUT_TYPE_TOUCH) {
+        unsigned long now = (unsigned long) (esp_timer_get_time() / 1000ULL);
+        if (now - lastPress > 1500)
+        {
+            closeCount = 0;
+        }
+        if (now - lastPress < 150)
+        {
+            return;
+        }
+        lastPress = now;
+
         int touch_y = event->data.touch_data.point.y;
 
         if (touch_y < LV_VER_RES / 3) {
+            closeCount = 0;
             for (int i = 0; i < 5; i++) {
                 lv_textarea_cursor_up(terminal_textarea);
             }
         } else if (touch_y > (LV_VER_RES * 2) / 3) {
+            closeCount = 0;
             for (int i = 0; i < 5; i++) {
                 lv_textarea_cursor_down(terminal_textarea);
             }
-        } else {
+        } else if (closeCount > 5) {
             display_manager_switch_view(&options_menu_view);
             simulateCommand("stop");
             simulateCommand("stopspam");
@@ -84,6 +113,11 @@ void terminal_view_hardwareinput_callback(InputEvent *event) {
             simulateCommand("gpsinfo -s");
             simulateCommand("blewardriving -s");
             return;
+        }
+        else
+        {
+            printf("Close count = %d\n", closeCount);
+            closeCount++;
         }
     } else if (event->type == INPUT_TYPE_JOYSTICK) {
         int button = event->data.joystick_index;

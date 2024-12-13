@@ -5,6 +5,7 @@
 #include "vendor/pcap.h"
 #include "vendor/GPS/gps_logger.h"
 #include "managers/gps_manager.h"
+#include "managers/views/terminal_screen.h"
 #define WPS_OUI 0x0050f204 
 #define TAG "WIFI_MONITOR"
 #define WPS_CONF_METHODS_PBC        0x0080
@@ -18,6 +19,7 @@
 #define ESP_WIFI_VENDOR_METADATA_LEN 8  // Channel(1) + RSSI(1) + Rate(1) + Timestamp(4) + Noise(1)
 wps_network_t detected_wps_networks[MAX_WPS_NETWORKS];
 int detected_network_count = 0;
+int packet_counter = 0;
 esp_timer_handle_t stop_timer;
 int should_store_wps = 1;
 gps_t *gps = NULL;
@@ -130,9 +132,18 @@ bool is_pwn_response(const wifi_promiscuous_pkt_t *pkt) {
 void wifi_raw_scan_callback(void* buf, wifi_promiscuous_pkt_type_t type) {
     wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t*)buf;
     if (pkt->rx_ctrl.sig_len > 0) {
-        esp_err_t ret = pcap_write_packet_to_buffer(pkt->payload, pkt->rx_ctrl.sig_len, PCAP_CAPTURE_WIFI);
+        esp_err_t ret = pcap_write_packet_to_buffer(pkt->payload, pkt->rx_ctrl.sig_len, PCAP_CAPTURE_WIFI);      
         if (ret != ESP_OK) {
             ESP_LOGE("RAW_SCAN", "Failed to write packet to buffer");
+        }
+        else
+        {
+            packet_counter++;
+            if (packet_counter == 100)
+            {
+                TERMINAL_VIEW_ADD_TEXT(".");
+                packet_counter = 0;
+            }
         }
     }
 }
